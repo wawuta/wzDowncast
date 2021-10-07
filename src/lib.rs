@@ -20,53 +20,25 @@ impl<T: Any> Downcast for T {
 #[macro_export]
 macro_rules! impl_downcast {
     (@$trait_:ident) => {
-        impl dyn $trait_ {
-            /// Returns true if the boxed type is the same as '_T'.
-            #[inline]
-            pub fn is<_T: $trait_>(&self) -> bool {
-                crate::Downcast::as_any(self).is::<_T>()
-            }
-
-            /// Return a reference to the boxed value if it is of type '_T',
-            /// 'None' if it isn't
-            #[inline]
-            pub fn downcast_ref<_T: $trait_>(&self) -> Option<&_T> {
-                crate::Downcast::as_any(self).downcast_ref::<_T>()
-            }
-
-            ///  Return a mutable referce to the boxed value if it is of type '_T',
-            /// or 'None' if it isn't
-            #[inline]
-            pub fn downcast_mut<_T: $trait_>(&mut self) -> Option<&mut _T> {
-                crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
+        impl_downcast! {
+            @as_item
+            impl dyn $trait_ {
+                impl_downcast! {@impl_body @$trait_ [] }
             }
         }
     };
+    
     (@$trait_:ident [$($args:ident,)*]) => {
-        impl<$($args),*> dyn $trait_<$($args),*>
-            where $($args: ::std::any::Any + 'static),*
-        {
-            /// Returns true if the boxed type is the same as 'T'.
-            #[inline]
-            pub fn is<_T: $trait_<$($args), *>>(&self) -> bool {
-                crate::Downcast::as_any(self).is::<_T>()
-            }
-
-            /// Returns a reference to the boxed value if it is of type'T', or
-            /// 'None' if it isn't.
-            #[inline]
-            pub fn downcast_ref<_T: $trait_<$($args),*>>(&self) -> Option<&_T> {
-                crate::Downcast::as_any(self).downcast_ref::<_T>()
-            }
-
-            /// Returns a mutable reference to the boxed value if it is of type
-            /// 'T', or 'None' if it isn't.
-            #[inline]
-            pub fn downcast_mut<_T: $trait_<$($args),*>>(&mut self) -> Option<&mut _T> {
-                crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
+        impl_downcast! {
+            @as_item
+            impl<$($args),*> dyn $trait_<$($args),*>
+                where $($args: ::std::any::Any + 'static),*
+            {
+                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
             }
         }
     };
+    
     
     (@$trait_:ident [$($args:ident,)*] where [$($preds:tt)+]) => {
         impl_downcast! {
@@ -75,41 +47,34 @@ macro_rules! impl_downcast {
                 where $($args: ::std::any::Any + 'static,)*
                       $($preds)*
             {
-                #[inline]
-                pub fn is<_T: $trait_<$($args),*>>(&self) -> bool {
-                    crate::Downcast::as_any(self).is::<_T>()
-                }
-                
-                #[inline]
-                pub fn downcast_ref<_T: $trait_<$($args),*>>(&self) -> Option<&_T> {
-                    crate::Downcast::as_any(self).downcast_ref::<_T>()
-                }
-                
-                #[inline]
-                pub fn downcast_mut<_T: $trait_<$($args),*>>(&mut self) -> Option<&mut _T> {
-                    crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
-                }
+                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
             }
         }
     };
 
     (concrete @$trait_:ident [$($args:ident),* $(,)*]) => {
-        impl dyn $trait_<$($args),*> {
-
-            #[inline]
-            pub fn is<_T: $trait_<$($args),*>>(&self) -> bool {
-                crate::Downcast::as_any(self).is::<_T>()
+        impl_downcast! {
+            @as_item
+            impl dyn $trait_<$($args),*> {
+                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
             }
-
-            #[inline]
-            pub fn downcast_ref<_T: $trait_<$($args),*>>(&self) -> Option<&_T> {
-                crate::Downcast::as_any(self).downcast_ref::<_T>()
-            }
-
-            #[inline]
-            pub fn downcast_mut<_T: $trait_<$($args),*>>(&mut self) -> Option<&mut _T> {
-                crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
-            }
+        }
+    };
+    
+    (@impl_body @$trait_:ident [$($args:ident,)*]) => {
+        #[inline]
+        pub fn is<_T: $trait_<$($args),*>>(&self) -> bool {
+            crate::Downcast::as_any(self).is::<_T>()
+        }
+        
+        #[inline]
+        pub fn downcast_ref<_T: $trait_<$($args),*>>(&self) -> Option<&_T> {
+            crate::Downcast::as_any(self).downcast_ref::<_T>()
+        }
+        
+        #[inline]
+        pub fn downcast_mut<_T: $trait_<$($args),*>>(&mut self) -> Option<&mut _T> {
+            crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
         }
     };
 
@@ -202,7 +167,7 @@ mod test {
     
     mod constrained_generic {
         use Downcast;
-        
+    
         trait Base<T: Copy>: Downcast {}
         impl_downcast!(Base<T> where T: Copy);
         
@@ -237,7 +202,7 @@ mod test {
     
     mod concrete {
         use super::super::Downcast;
-        
+    
         // A trait than can be downcast.
         trait Base<T>: Downcast {}
         impl_downcast!(concrete Base<u32>);
