@@ -19,72 +19,79 @@ impl<T: Any> Downcast for T {
 /// methods to the corresponding implementations on 'std::any::Any' in the standard library.
 #[macro_export]
 macro_rules! impl_downcast {
-    (@$trait_:ident) => {
+    (@impl_full
+        $trait_:ident [$($param_types:tt)*]
+        for [$($forall_types:ident),*]
+        where [$($preds:tt)*]
+    ) => {
         impl_downcast! {
-            @as_item
-            impl dyn $trait_ {
-                impl_downcast! {@impl_body @$trait_ [] }
-            }
+            @inject_where
+                [impl<$($forall_types),*> $trait_<$($param_types)*>]
+                types [$($forall_types),*]
+                where [$($preds)*]
+                [{
+                    impl_downcast! {@impl_body $trait_ [$($param_types)*]}
+                }]
         }
     };
     
-    (@$trait_:ident [$($args:ident,)*]) => {
-        impl_downcast! {
-            @as_item
-            impl<$($args),*> dyn $trait_<$($args),*>
-                where $($args: ::std::any::Any + 'static),*
-            {
-                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
-            }
-        }
-    };
-    
-    
-    (@$trait_:ident [$($args:ident,)*] where [$($preds:tt)+]) => {
-        impl_downcast! {
-            @as_item
-            impl<$($args),*> dyn $trait_<$($args),*>
-                where $($args: ::std::any::Any + 'static,)*
-                      $($preds)*
-            {
-                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
-            }
-        }
-    };
-
-    (concrete @$trait_:ident [$($args:ident),* $(,)*]) => {
-        impl_downcast! {
-            @as_item
-            impl dyn $trait_<$($args),*> {
-                impl_downcast! {@impl_body @$trait_ [$($args,)*]}
-            }
-        }
-    };
-    
-    (@impl_body @$trait_:ident [$($args:ident,)*]) => {
+    (@impl_body $trait_:ident [$($types:tt)*]) => {
         #[inline]
-        pub fn is<_T: $trait_<$($args),*>>(&self) -> bool {
+        pub fn is<_T: $trait_<$($types),*>>(&self) -> bool {
             crate::Downcast::as_any(self).is::<_T>()
         }
         
         #[inline]
-        pub fn downcast_ref<_T: $trait_<$($args),*>>(&self) -> Option<&_T> {
+        pub fn downcast_ref<_T: $trait_<$($types),*>>(&self) -> Option<&_T> {
             crate::Downcast::as_any(self).downcast_ref::<_T>()
         }
         
         #[inline]
-        pub fn downcast_mut<_T: $trait_<$($args),*>>(&mut self) -> Option<&mut _T> {
+        pub fn downcast_mut<_T: $trait_<$($types),*>>(&mut self) -> Option<&mut _T> {
             crate::Downcast::as_any_mut(self).downcast_mut::<_T>()
+        }
+    };
+    
+    (@inject_where [$($before:tt)*] types [] where [] [$($after:tt)*]) => {
+	    impl_downcast! {@as_item $($before)* $($after)*}
+    };
+    
+    (@inject_where [$($before:tt)*] types [$($types:ident),*] where [] [$($after:tt)*]) =>{
+        impl_downcast! {
+            @as_item
+                $($before)*
+                where $($types: ::std::any::Any + 'static),*
+                $($after)*
+        }
+    };
+    
+    (@inject_where [$($before:tt)*] types [$($types:ident),*] where [$($preds:tt)+] [$($after:tt)*]) => {
+	    impl_downcast! {
+            @as_item
+                $($before)*
+            where
+                $($types: ::std::any::Any + 'static,)*
+                $($preds)*
+            $($after)*
         }
     };
 
     (@as_item $i:item) => {$i};
-    ($trait_:ident <>) => {impl_downcast! {@$trait_ }};
-    ($trait_:ident < $($args:ident),* $(,)*>) => {impl_downcast! {@$trait_[$($args,)*]}};
-    ($trait_:ident) => {impl_downcast! {@$trait_ }};
-    (concrete $trait_:ident <$($args:ident),* $(,)*>) => {impl_downcast! {concrete @$trait_[$($args,)*]}};
-    ($trait_:ident < $($args:ident),* $(,)* > where $($preds:tt)+) => {
-        impl_downcast! {@$trait_ [$($args,)*] where [$($preds)*]}
+    
+    // No type parameters.
+    ($trait_:ident) => {impl_downcast! {@impl_full $trait_ [] for [] where []}};
+    ($trait_:ident <>) => {impl_downcast! {@impl_full $trait_ [] for [] where []}};
+    // Type parameters.
+    ($trait_:ident < $($types:ident),*>) => {
+        impl_downcast! {@impl_full $trait_ [$($types),*] for [$($types),*] where []}
+    };
+    // Type parameters and where clauses.
+    ($trait_:ident <$($types:ident),*> where $($preds:tt)+) => {
+        impl_downcast! {@impl_full $trait_ [$($types),*] for [$($types),*] where [$($preds)*]}
+    };
+    // Concretely-parametrized types.
+    (concrete $trait_:ident <$($types:ident),*>) => {
+        impl_downcast! {@impl_full $trait_ [$($types),*] for [] where[]}
     };
 }
 
@@ -93,52 +100,67 @@ macro_rules! impl_downcast {
 mod test {
     mod non_generic {
         use Downcast;
-    
+        
         // A trait that can be downcast.
         trait Base: Downcast {}
         impl_downcast!(Base);
-
+        
         // Concrete type implementing Base.
         struct Foo(u32);
-
+        
         impl Base for Foo {}
-
+        
+        struct Bar(f64);
+        
+        impl Base for Bar {}
+        
         // Functions that can work on references to Base trait objects.
-        fn get_val(base: &Box<dyn Base>) -> u32 {
-            match base.downcast_ref::<Foo>() {
+        fn get_val(base: &Box<dyn Base>) -> f64 {
+            match base.downcast_ref::<Bar>() {
                 Some(val) => val.0,
-                None => 0
+                None => 0.0
             }
         }
-
-        fn set_val(base: &mut Box<dyn Base>, val: u32) {
-            if let Some(foo) = base.downcast_mut::<Foo>() {
-                foo.0 = val;
+        
+        fn set_val(base: &mut Box<dyn Base>, val: f64) {
+            if let Some(bar) = base.downcast_mut::<Bar>() {
+                bar.0 = val;
             }
         }
-
+        
         #[test]
         fn test() {
-            let mut base: Box<dyn Base> = Box::new(Foo(42));
-            assert_eq!(get_val(&base), 42);
-
-            set_val(&mut base, 6 * 9);
-            assert_eq!(get_val(&base), 6 * 9);
-
-            assert!(base.is::<Foo>());
+            let mut base: Box<dyn Base> = Box::new(Bar(42.0));
+            assert_eq!(get_val(&base), 42.0);
+            
+            if let Some(foo) = base.downcast_ref::<Foo>() {
+                assert_eq!(foo.0, 42);
+            }
+            if let Some(bar) = base.downcast_ref::<Bar>() {
+                assert_eq!(bar.0, 42.0)
+            }
+            
+            set_val(&mut base, 6.0 * 9.0);
+            assert_eq!(get_val(&base), 6.0 * 9.0);
+            
+            assert!(base.is::<Bar>());
         }
     }
-
+    
     mod generic {
         use Downcast;
-    
+        
         trait Base<T>: Downcast {}
         impl_downcast!(Base<T>);
-
+        
         struct Foo(u32);
-
+        
         impl Base<u32> for Foo {}
-    
+        
+        struct Bar(f64);
+        
+        impl Base<u32> for Bar {}
+        
         /// Functions that can work on references to Base trait objects.
         fn get_val(base: &Box<dyn Base<u32>>) -> u32 {
             match base.downcast_ref::<Foo>() {
@@ -146,7 +168,7 @@ mod test {
                 None => 0
             }
         }
-    
+        
         fn set_val(base: &mut Box<dyn Base<u32>>, val: u32) {
             if let Some(foo) = base.downcast_mut::<Foo>() {
                 foo.0 = val;
@@ -157,6 +179,12 @@ mod test {
         fn test() {
             let mut base: Box<dyn Base<u32>> = Box::new(Foo(42));
             assert_eq!(get_val(&base), 42);
+    
+            if let Some(foo) = base.downcast_ref::<Foo>() {
+                assert_eq!(foo.0, 42);
+            } else if let Some(bar) = base.downcast_ref::<Bar>() {
+                assert_eq!(bar.0, 42.0);
+            }
     
             set_val(&mut base, 6 * 9);
             assert_eq!(get_val(&base), 6 * 9);
